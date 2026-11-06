@@ -10,7 +10,8 @@ also turn them into one video.
    as soon as you paste. Clicking the box selects the whole link, so pasting replaces it.
    For a link you typed, press **Enter**. While it's looking, **Cancel** in the box stops it.
 2. **Pick what to save.** Results are grouped into **Video**, **Audio** and **Images** sections. Each row shows a
-   preview, the file type it will be saved as (MP4, MP3, JPG…), the length, and, for videos, a quality menu.
+   preview, the file type it will be saved as (MP4, MP3, JPG…), the length, the download size when the site
+   gives enough to tell, and, for videos, a quality menu.
 3. **Press Download** on a row. One progress bar shows how far along it is. **Cancel** stops it.
 4. **Press Show** when it finishes to open the folder with the file selected.
 
@@ -29,11 +30,12 @@ also turn them into one video.
 | A direct link to a file (`.jpg`, `.mp4`, `.mp3`…) | That file |
 
 **Choosing a resolution.** Each video has a quality menu listing the resolutions the site offers, with the
-highest selected. Every video is saved as H.264 + AAC mp4, which plays in QuickTime, on Windows and in browsers.
+highest selected, and the estimated download size next to each one (`~` marks an estimate). Every video is saved as H.264 + AAC mp4, which plays in QuickTime, on Windows and in browsers.
 Sites often offer their sharpest versions only in newer formats (VP9, AV1) that QuickTime can't open. Those
 qualities are marked **slower**: the app downloads them and then converts them. That's all part of the one
 "Downloading" bar. On a Mac the conversion uses the built-in hardware encoder, so it's quick.
-Pick a quality without "slower" to skip the conversion.
+Pick a quality without "slower" to skip the conversion. The size is what gets downloaded, so a converted video
+or an mp3 can end up a different size on disk.
 
 ## Turning images + audio into a video
 
@@ -59,7 +61,8 @@ instead of overwriting it.
 ## Built-in download engines
 
 Everything the app needs ships inside it, so there's nothing to install and the app never downloads extra
-programs on its own:
+programs on its own. On a Mac, the first launch takes a few seconds longer ("Starting…") while the app unpacks
+yt-dlp into its own data folder, which keeps every later fetch fast:
 
 | Tool | What it's for |
 |---|---|

@@ -16,7 +16,7 @@ use serde_json::Value;
 
 use crate::binaries::Engine;
 use crate::probe::{clean_title, ext_of, Kind, MediaItem, ProbeResult, Source};
-use crate::proc::{self, Cancel, Result};
+use crate::proc::{self, Cancel, Output, Result};
 
 static INSTAGRAM_POST: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"instagram\.com/(?:[^/?#]+/)?(?:p|reels?|tv)/([A-Za-z0-9_-]+)").unwrap());
@@ -32,16 +32,21 @@ static JSON_SCRIPT: LazyLock<Regex> =
 static OG_TITLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"<meta property="og:title" content="([^"]*)""#).unwrap());
 
+/// Links worth keeping yt-dlp's pages for, because the post may hold photos.
+pub fn may_be_photo_post(url: &str) -> bool {
+    INSTAGRAM_POST.is_match(url) || FACEBOOK.is_match(url)
+}
+
 /// Runs yt-dlp on `url` with `--write-pages` (plus `extra_args`) in a temporary folder and
-/// returns its stdout and the text of every page it saved. A failing exit (e.g. "There is no
-/// video in this post") is expected; the saved pages are what we want.
-async fn saved_pages(
+/// returns its output and the text of every page it saved. A failing exit (e.g. "There is no
+/// video in this post") is expected for photos; the saved pages are what we want.
+pub async fn saved_pages(
     engine: &Engine,
     url: &str,
     extra_args: &[&str],
     cancel: &Cancel,
     timeout: std::time::Duration,
-) -> Result<(String, Vec<String>)> {
+) -> Result<(Output, Vec<String>)> {
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
     let dir = std::env::temp_dir().join(format!("download-anything-pages-{}-{nanos}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(proc::err)?;
@@ -57,7 +62,7 @@ async fn saved_pages(
         .filter_map(|e| std::fs::read_to_string(e.path()).ok())
         .collect();
     let _ = std::fs::remove_dir_all(&dir);
-    Ok((run?.stdout, pages))
+    Ok((run?, pages))
 }
 
 fn photo_item(title: String, url: String, size: (u64, u64), referer: &str) -> MediaItem {
@@ -71,6 +76,7 @@ fn photo_item(title: String, url: String, size: (u64, u64), referer: &str) -> Me
         detail: (size.0 > 0).then(|| format!("{}×{}", size.0, size.1)),
         thumbnail: Some(url.clone()),
         qualities: Vec::new(),
+        size: None,
         source: Source::Direct { url, referer: Some(referer.into()) },
     }
 }
@@ -82,18 +88,15 @@ fn numbered(title: &str, i: usize, count: usize) -> String {
 
 // ---------- Instagram ----------
 
-/// Photos of a public Instagram post, or `None` if the link isn't an Instagram post or
-/// nothing was found.
-pub async fn instagram(engine: &Engine, url: &str, cancel: &Cancel, timeout: std::time::Duration) -> Result<Option<ProbeResult>> {
-    let Some(code) = INSTAGRAM_POST.captures(url).map(|c| c[1].to_string()) else {
-        return Ok(None);
-    };
-    let (_, pages) = saved_pages(engine, url, &["--skip-download"], cancel, timeout).await?;
+/// Photos of a public Instagram post in `pages`, or `None` if the link isn't an Instagram post
+/// or nothing was found.
+pub fn instagram(url: &str, pages: &[String]) -> Option<ProbeResult> {
+    let code = INSTAGRAM_POST.captures(url)?[1].to_string();
     let pages: Vec<Value> = pages.iter().filter_map(|text| serde_json::from_str(text).ok()).collect();
-    Ok(pages.iter().find_map(|page| find_post(page, &code)).and_then(|post| {
+    pages.iter().find_map(|page| find_post(page, &code)).and_then(|post| {
         let (title, items) = post_items(post);
         (!items.is_empty()).then(|| ProbeResult { title, items })
-    }))
+    })
 }
 
 /// The post object with this shortcode that carries images (searched depth-first, so the
@@ -171,7 +174,7 @@ pub async fn tiktok(engine: &Engine, url: &str, cancel: &Cancel, timeout: std::t
         return Ok(None);
     };
     let video_url = format!("{}/video/{}", &c[1], &c[2]);
-    let (stdout, pages) = saved_pages(engine, &video_url, &["-J"], cancel, timeout).await?;
+    let (out, pages) = saved_pages(engine, &video_url, &["-J"], cancel, timeout).await?;
     let Some(post) = pages.iter().find_map(|page| tiktok_post(page)) else {
         return Ok(None);
     };
@@ -199,7 +202,7 @@ pub async fn tiktok(engine: &Engine, url: &str, cancel: &Cancel, timeout: std::t
         .collect();
 
     // The sound, as yt-dlp lists it for the /video/ form (an audio-only format).
-    let info: Value = serde_json::from_str(&stdout).unwrap_or(Value::Null);
+    let info: Value = serde_json::from_str(&out.stdout).unwrap_or(Value::Null);
     let has_sound = info["formats"].as_array().is_some_and(|f| f.iter().any(|f| f["acodec"].as_str().is_some_and(|a| a != "none")));
     if has_sound {
         let music = &post["music"];
@@ -211,6 +214,7 @@ pub async fn tiktok(engine: &Engine, url: &str, cancel: &Cancel, timeout: std::t
             detail: duration.map(crate::probe::fmt_duration),
             thumbnail: music["coverLarge"].as_str().map(String::from),
             qualities: Vec::new(),
+            size: crate::probe::audio_size(&info),
             source: Source::YtDlp { url: video_url, playlist_index: None, audio_only: true, max_height: None },
         });
     }
@@ -226,19 +230,18 @@ fn tiktok_post(page: &str) -> Option<Value> {
 
 // ---------- Facebook ----------
 
-/// Photos of a public Facebook post (several photos) or a single photo page (`?fbid=`).
-pub async fn facebook(engine: &Engine, url: &str, cancel: &Cancel, timeout: std::time::Duration) -> Result<Option<ProbeResult>> {
+/// Photos of a public Facebook post (several photos) or a single photo page (`?fbid=`) in `pages`.
+pub fn facebook(url: &str, pages: &[String]) -> Option<ProbeResult> {
     if !FACEBOOK.is_match(url) {
-        return Ok(None);
+        return None;
     }
-    let (_, pages) = saved_pages(engine, url, &["--skip-download"], cancel, timeout).await?;
     let blocks: Vec<Value> = pages
         .iter()
         .flat_map(|page| JSON_SCRIPT.captures_iter(page).filter_map(|c| serde_json::from_str(&c[1]).ok()))
         .collect();
     let photos = facebook_photos(&blocks, FBID.captures(url).map(|c| c[1].to_string()).as_deref());
     if photos.is_empty() {
-        return Ok(None);
+        return None;
     }
     let title = pages
         .iter()
@@ -251,7 +254,7 @@ pub async fn facebook(engine: &Engine, url: &str, cancel: &Cancel, timeout: std:
         .enumerate()
         .map(|(i, (url, w, h))| photo_item(numbered(&title, i, count), url, (w, h), "https://www.facebook.com/"))
         .collect();
-    Ok(Some(ProbeResult { title, items }))
+    Some(ProbeResult { title, items })
 }
 
 /// A post's photos (`all_subattachments`, in order, each once), or else the photo whose id is `fbid`.

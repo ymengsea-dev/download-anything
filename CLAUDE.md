@@ -13,6 +13,9 @@ file in sync with user-facing changes.
 - **Standalone:** yt-dlp and FFmpeg are bundled as Tauri sidecars (`bundle.externalBin`). `pnpm engines`
   ([scripts/engines.mjs](scripts/engines.mjs)) fetches pinned versions into `src-tauri/binaries/` (git-ignored) and
   verifies pinned SHA-256s; it runs before `tauri dev`/`build`, and once by hand before plain `cargo build`/`test`.
+  On macOS yt-dlp is the official folder build instead of a sidecar: `yt-dlp_macos.zip` is a resource
+  (`tauri.macos.conf.json`) that the app unpacks once into app data. The single-file build took 7s to start on every
+  run, because macOS checks each library it unpacks to a new temp folder.
   The app never downloads dependencies by itself. The only exception is the user-clicked "Update yt-dlp",
   verified against yt-dlp's SHA2-256SUMS ([src-tauri/src/binaries.rs](src-tauri/src/binaries.rs)).
   Don't add PATH lookups, auto-updates or runtime downloads of tools. gallery-dl was removed on purpose:
@@ -72,6 +75,11 @@ changes also run the ignored e2e tests.
   regenerates `src-tauri/icons/` and deletes everything `bundle.icon` doesn't list, so the folder only holds
   the 5 files the installers use. The UI's placeholder logo imports `icons/128x128.png`.
 - `scripts/collect-build.mjs`: copies installers into `builds/`. `builds/` and `dist/` are never committed.
+- `design/dmg/` + `scripts/dmg.mjs`: the macOS install window. Tauri's own DMG styling skips CI and doesn't stick on
+  recent macOS, so don't use `bundle.macOS.dmg`. `pnpm release:local` and the release workflow copy the committed
+  `background.tiff` and `DS_Store` into the built .dmg with hdiutil; a bare `pnpm tauri build` gives a plain window.
+  To change it, edit `background.svg` (340 pt tall; Finder's title bar takes the other 32) or the positions in
+  `dmg.mjs`, then run `pnpm dmg-layout` on a Mac to re-render the art and regenerate the layout (opens Finder).
 
 ## Conventions
 

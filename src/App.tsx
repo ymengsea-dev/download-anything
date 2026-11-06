@@ -30,8 +30,15 @@ const SECTIONS: { kind: Kind; label: string }[] = [
   { kind: "audio", label: "Audio" },
   { kind: "image", label: "Images" },
 ];
+const formatSize = (bytes: number) => {
+  const mb = bytes / 1e6;
+  if (mb < 1) return `${Math.max(Math.round(bytes / 1e3), 1)} KB`;
+  if (mb < 1000) return `${mb < 100 ? mb.toFixed(1) : Math.round(mb)} MB`;
+  return `${(mb / 1000).toFixed(1)} GB`;
+};
 const qualityLabel = (q: Quality) =>
-  `${q.height}p${q.height >= 2160 ? " 4K" : q.height >= 1440 ? " 2K" : ""}${q.compatible ? "" : " · slower"}`;
+  `${q.height === 2160 ? "4K" : q.height === 1440 ? "2K" : `${q.height}p`}` +
+  `${q.size ? ` · ~${formatSize(q.size)}` : ""}${q.compatible ? "" : " · slower"}`;
 
 function stored(key: string) {
   try {
@@ -285,6 +292,8 @@ export default function App() {
                             title={item.title}
                             format={item.format}
                             detail={item.detail}
+                            // Sizes from the engine are estimates; a direct link's is exact.
+                            size={item.size ? `${item.source.via === "ytDlp" ? "~" : ""}${formatSize(item.size)}` : undefined}
                             qualities={item.qualities}
                             quality={quality[id] ?? item.qualities[0]?.height}
                             onQuality={(h) => setQuality((q) => ({ ...q, [id]: h }))}
@@ -337,6 +346,7 @@ interface RowProps {
   title: string;
   format: string | null;
   detail: string | null;
+  size?: string;
   qualities?: Quality[];
   quality?: number;
   onQuality?: (height: number) => void;
@@ -346,8 +356,10 @@ interface RowProps {
   onCancel: () => void;
 }
 
-function Row({ thumb, title, format, detail, qualities = [], quality, onQuality, action, job, onStart, onCancel }: RowProps) {
+function Row({ thumb, title, format, detail, size, qualities = [], quality, onQuality, action, job, onStart, onCancel }: RowProps) {
   const running = job?.status === "running";
+  // The quality menu takes the whole line, so a video's length sits on its thumbnail instead.
+  const badge = qualities.length > 0 ? detail : null;
   return (
     <div className="row">
       <div className="thumb">
@@ -360,6 +372,7 @@ function Row({ thumb, title, format, detail, qualities = [], quality, onQuality,
             onError={(e) => (e.currentTarget.style.display = "none")}
           />
         )}
+        {badge && <span className="thumb-badge">{badge}</span>}
       </div>
       <div className="info">
         <div className="title" title={title}>
@@ -394,7 +407,8 @@ function Row({ thumb, title, format, detail, qualities = [], quality, onQuality,
                 ))}
               </select>
             )}
-            {detail && <span className="detail">{detail}</span>}
+            {detail && !badge && <span className="detail">{detail}</span>}
+            {size && <span className="detail">{size}</span>}
           </div>
         )}
       </div>

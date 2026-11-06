@@ -7,6 +7,9 @@
 // macOS: FFmpeg is compiled from official source by scripts/build-ffmpeg-macos.sh (LGPL, shareable),
 // because the ready-made Mac builds are "nonfree". It's rebuilt only when that script changes.
 //
+// macOS: yt-dlp is the official folder build, as a zip the app unpacks once (see binaries.rs), because
+// the single-file build takes 7 seconds to start on every run. tauri.macos.conf.json bundles it.
+//
 // Output: src-tauri/binaries/<name>-<target-triple>[.exe] (Tauri `externalBin`) and
 // src-tauri/binaries/licenses/ (bundled as resources). Already-verified files are reused.
 //
@@ -27,11 +30,11 @@ const FFMPEG_URL = `https://github.com/eugeneware/ffmpeg-static/releases/downloa
 // Per target: yt-dlp [url, sha256]; FFmpeg either "build-macos" or [url, sha256, gzipped] plus its license.
 const TARGETS = {
   "aarch64-apple-darwin": {
-    ytDlp: [`${YT_DLP_URL}/yt-dlp_macos`, "0f922c15ccc0b83eefa1c8bc9104e434318c4bf16e408e1ee93b7745a6efe0aa"],
+    ytDlp: [`${YT_DLP_URL}/yt-dlp_macos.zip`, "20d98fa608998eff87d1d35a6e9fb65e4b874639a6cc89addc19da3becde3ef1"],
     ffmpeg: "build-macos",
   },
   "x86_64-apple-darwin": {
-    ytDlp: [`${YT_DLP_URL}/yt-dlp_macos`, "0f922c15ccc0b83eefa1c8bc9104e434318c4bf16e408e1ee93b7745a6efe0aa"],
+    ytDlp: [`${YT_DLP_URL}/yt-dlp_macos.zip`, "20d98fa608998eff87d1d35a6e9fb65e4b874639a6cc89addc19da3becde3ef1"],
     ffmpeg: "build-macos",
   },
   "x86_64-pc-windows-msvc": {
@@ -62,7 +65,13 @@ const exe = target.includes("windows") ? ".exe" : "";
 const licenses = join(outDir, "licenses");
 rmSync(licenses, { recursive: true, force: true }); // only this target's licenses get bundled
 mkdirSync(licenses, { recursive: true });
-await fetchVerified("yt-dlp", ...spec.ytDlp, false, join(outDir, `yt-dlp-${target}${exe}`), true);
+if (target.includes("apple")) {
+  await fetchVerified("yt-dlp", ...spec.ytDlp, false, join(outDir, "yt-dlp-macos.zip"), false);
+  // The single-file build from before the switch.
+  for (const old of [`yt-dlp-${target}`, `yt-dlp-${target}.sha256`]) rmSync(join(outDir, old), { force: true });
+} else {
+  await fetchVerified("yt-dlp", ...spec.ytDlp, false, join(outDir, `yt-dlp-${target}${exe}`), true);
+}
 if (spec.ffmpeg === "build-macos") {
   buildMacFfmpeg(join(outDir, `ffmpeg-${target}`));
 } else {

@@ -64,10 +64,12 @@ cargo test -- --include-ignored  # plus end-to-end tests that hit the network an
 
 ```text
 design/app-icon.svg  hand-drawn icon source (app-icon.png is its 1024 px render)
+design/dmg/          macOS install window: background.svg, its render, and the saved Finder layout
 index.html           page shell; loads dist/main.js + main.css
 scripts/
   esbuild.mjs        bundles src/ into dist/ (`pnpm dev` = dev server on :1420 with live reload)
   collect-build.mjs  copies installers into builds/v<version>/<os>-<arch>/
+  dmg.mjs            adds the install window to the built .dmg
 src/                 React UI (App.tsx) + typed command wrappers (api.ts)
 src-tauri/src/
   binaries.rs        locate the bundled yt-dlp / ffmpeg; verified "Update yt-dlp"

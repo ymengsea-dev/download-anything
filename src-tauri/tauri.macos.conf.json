@@ -1,0 +1,12 @@
+{
+  "bundle": {
+    "externalBin": [
+      "binaries/ffmpeg"
+    ],
+    "resources": {
+      "binaries/licenses/": "licenses/",
+      "binaries/yt-dlp-macos.zip": "yt-dlp-macos.zip",
+      "binaries/yt-dlp-macos.zip.sha256": "yt-dlp-macos.zip.sha256"
+    }
+  }
+}

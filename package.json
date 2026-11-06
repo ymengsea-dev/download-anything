@@ -8,9 +8,10 @@
     "dev": "node scripts/esbuild.mjs --serve",
     "build": "tsc && node scripts/esbuild.mjs",
     "tauri": "tauri",
-    "release:local": "tauri build && node scripts/collect-build.mjs",
+    "release:local": "node scripts/dmg.mjs build && node scripts/collect-build.mjs",
     "collect-build": "node scripts/collect-build.mjs",
     "icons": "node scripts/icons.mjs",
+    "dmg-layout": "node scripts/dmg.mjs --layout",
     "engines": "node scripts/engines.mjs"
   },
   "dependencies": {

@@ -67,4 +67,5 @@ jobs:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: Download Anything ${{ github.ref_name }}
           releaseDraft: true
+          tauriScript: node scripts/dmg.mjs # tauri build, then adds the install window to the .dmg
           args: ${{ matrix.args }}

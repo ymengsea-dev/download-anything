@@ -85,7 +85,7 @@ async fn setup_engine(app: AppHandle, state: State<'_, AppState>) -> Result<Engi
     if let Some(engine) = slot.as_ref() {
         return Ok((**engine).clone());
     }
-    let engine = binaries::locate(&updates_dir(&app)?)?;
+    let engine = binaries::locate(&updates_dir(&app)?, &app.path().app_data_dir().map_err(err)?.join("engines")).await?;
     *slot = Some(Arc::new(engine.clone()));
     Ok(engine)
 }
@@ -257,7 +257,9 @@ mod e2e {
     use super::*;
 
     async fn engine(dir: &std::path::Path) -> Engine {
-        binaries::locate(&dir.join("updates")).expect("bundled engines (run `pnpm engines`)")
+        // Shared between tests: a new copy of the macOS yt-dlp takes seconds on its first run.
+        let engines = std::env::temp_dir().join("download-anything-test-engines");
+        binaries::locate(&dir.join("updates"), &engines).await.expect("bundled engines (run `pnpm engines`)")
     }
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -347,7 +349,7 @@ mod e2e {
             Ok(found) => {
                 println!("title: {}", found.title);
                 for i in &found.items {
-                    println!("  {:?} {:?} {:?} {}", i.kind, i.format, i.detail, i.title);
+                    println!("  {:?} {:?} {:?} {:?} {:?} {}", i.kind, i.format, i.detail, i.size, i.qualities, i.title);
                 }
             }
             Err(e) => println!("error: {e}"),

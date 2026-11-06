@@ -439,6 +439,7 @@ section .row + .row {
 }
 
 .thumb {
+  position: relative;
   flex: none;
   width: 52px;
   height: 52px;
@@ -451,6 +452,20 @@ section .row + .row {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* Always light on dark, because it sits on a photo in either theme. */
+.thumb-badge {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 10px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
 }
 
 .info {
@@ -492,7 +507,8 @@ section .row + .row {
 }
 
 .quality {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   font: inherit;
   font-size: 12px;
   padding: 2px 4px;

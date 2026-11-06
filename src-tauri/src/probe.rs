@@ -51,6 +51,9 @@ pub struct MediaItem {
     /// Video resolutions on offer, best first. Empty when unknown.
     #[serde(default)]
     pub qualities: Vec<Quality>,
+    /// Bytes to download, when there's no quality menu (`Quality::size` otherwise). `None` when unknown.
+    #[serde(default)]
+    pub size: Option<u64>,
     pub source: Source,
 }
 
@@ -61,6 +64,9 @@ pub struct Quality {
     pub height: u32,
     /// Available as H.264, so it downloads without converting.
     pub compatible: bool,
+    /// Estimated bytes to download at this resolution, video and audio together.
+    #[serde(default)]
+    pub size: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -97,7 +103,18 @@ pub async fn probe(engine: &Engine, url: &str, cancel: &Cancel) -> Result<ProbeR
         return Ok(found);
     }
 
-    match probe_yt_dlp(engine, url, cancel).await {
+    // Posts that may turn out to be photos keep yt-dlp's pages from this one run, so reading
+    // the photos doesn't cost a second run (each one takes seconds just to start).
+    let (run, pages) = if crate::photos::may_be_photo_post(url) {
+        match crate::photos::saved_pages(engine, url, &YT_DLP_PROBE_ARGS, cancel, ENGINE_TIMEOUT).await {
+            Ok((out, pages)) => (Ok(out), pages),
+            Err(e) => (Err(e), Vec::new()),
+        }
+    } else {
+        let args = YT_DLP_PROBE_ARGS.into_iter().chain(["--no-playlist", url]);
+        (proc::run_with_timeout(&engine.yt_dlp, args, Some(cancel), Some(ENGINE_TIMEOUT), |_| {}).await, Vec::new())
+    };
+    match run.and_then(|out| read_yt_dlp(&out, url)) {
         Ok(found) if !found.items.is_empty() => return Ok(found),
         Ok(_) => {}
         Err(e) => first_error = Some(e),
@@ -108,14 +125,8 @@ pub async fn probe(engine: &Engine, url: &str, cancel: &Cancel) -> Result<ProbeR
 
     // Photo posts (Instagram, Facebook): yt-dlp reads them (without a login, for public posts)
     // but only downloads video. Take the photos from the data it fetched.
-    if let Ok(Some(found)) = crate::photos::instagram(engine, url, cancel, ENGINE_TIMEOUT).await {
+    if let Some(found) = crate::photos::instagram(url, &pages).or_else(|| crate::photos::facebook(url, &pages)) {
         return Ok(found);
-    }
-    if let Ok(Some(found)) = crate::photos::facebook(engine, url, cancel, ENGINE_TIMEOUT).await {
-        return Ok(found);
-    }
-    if is_cancelled() {
-        return Err("Cancelled".into());
     }
 
     let html = tokio::select! {
@@ -158,11 +169,9 @@ fn site_name(url: &str) -> String {
 
 // ---------- yt-dlp ----------
 
-async fn probe_yt_dlp(engine: &Engine, url: &str, cancel: &Cancel) -> Result<ProbeResult> {
-    let mut args: Vec<String> =
-        ["-J", "--no-warnings", "--flat-playlist", "--no-playlist", "--playlist-items", "1:50"].map(String::from).into();
-    args.push(url.into());
-    let out = proc::run_with_timeout(&engine.yt_dlp, &args, Some(cancel), Some(ENGINE_TIMEOUT), |_| {}).await?;
+const YT_DLP_PROBE_ARGS: [&str; 5] = ["-J", "--no-warnings", "--flat-playlist", "--playlist-items", "1:50"];
+
+fn read_yt_dlp(out: &proc::Output, url: &str) -> Result<ProbeResult> {
     if !out.success {
         return Err(out.error_message());
     }
@@ -203,6 +212,7 @@ fn push_yt_dlp_items(items: &mut Vec<MediaItem>, e: &Value, url: &str, playlist_
         .map(String::from);
     let duration = e["duration"].as_f64().map(fmt_duration);
     let (has_video, has_audio) = stream_kinds(e);
+    let qualities = qualities(e);
 
     let source = |audio_only| Source::YtDlp { url: url.into(), playlist_index, audio_only, max_height: None };
     if has_video {
@@ -212,7 +222,8 @@ fn push_yt_dlp_items(items: &mut Vec<MediaItem>, e: &Value, url: &str, playlist_
             format: Some("mp4".into()),
             detail: duration.clone(),
             thumbnail: thumbnail.clone(),
-            qualities: qualities(e),
+            qualities: qualities.clone(),
+            size: if qualities.is_empty() { video_size(e) } else { None },
             source: source(false),
         });
     }
@@ -224,6 +235,7 @@ fn push_yt_dlp_items(items: &mut Vec<MediaItem>, e: &Value, url: &str, playlist_
             detail: duration,
             thumbnail: thumbnail.clone(),
             qualities: Vec::new(),
+            size: audio_size(e),
             source: source(true),
         });
     }
@@ -237,16 +249,17 @@ fn push_yt_dlp_items(items: &mut Vec<MediaItem>, e: &Value, url: &str, playlist_
                 detail: Some("cover art".into()),
                 thumbnail: Some(thumb.clone()),
                 qualities: Vec::new(),
+                size: None,
                 source: Source::Direct { url: thumb, referer: Some(url.into()) },
             });
         }
     }
 }
 
-/// Distinct video resolutions, best first, noting which exist as H.264.
+/// Distinct video resolutions, best first, noting which exist as H.264 and how much each downloads.
 fn qualities(e: &Value) -> Vec<Quality> {
-    let mut by_height = std::collections::BTreeMap::<u32, bool>::new();
-    for f in e["formats"].as_array().into_iter().flatten() {
+    let mut by_height = std::collections::BTreeMap::<u32, Vec<&Value>>::new();
+    for f in formats_of(e) {
         let vcodec = f["vcodec"].as_str().unwrap_or_default();
         if vcodec == "none" || f["format_note"] == "storyboard" {
             continue;
@@ -256,14 +269,78 @@ fn qualities(e: &Value) -> Vec<Quality> {
         if short < 100 {
             continue;
         }
-        let h264 = vcodec.starts_with("avc1") || vcodec.starts_with("h264");
-        *by_height.entry(short).or_default() |= h264;
+        by_height.entry(short).or_default().push(f);
     }
+    let audio = best_audio_for_video(e);
     by_height
         .into_iter()
         .rev()
-        .map(|(height, compatible)| Quality { height, compatible })
+        .filter_map(|(height, formats)| {
+            let picked = pick_video(&formats)?;
+            Some(Quality { height, compatible: is_h264(picked), size: with_audio(picked, audio, e) })
+        })
         .collect()
+}
+
+// Sizes: the formats download::yt_dlp's `-S` sort would pick. yt-dlp lists formats worst to best,
+// so among equals the last one wins.
+
+fn formats_of(e: &Value) -> impl Iterator<Item = &Value> {
+    e["formats"].as_array().into_iter().flatten()
+}
+
+fn is_h264(f: &Value) -> bool {
+    f["vcodec"].as_str().is_some_and(|v| v.starts_with("avc1") || v.starts_with("h264"))
+}
+
+fn is_aac(f: &Value) -> bool {
+    f["acodec"].as_str().is_some_and(|a| a.starts_with("mp4a") || a.starts_with("aac"))
+}
+
+fn is_audio_only(f: &Value) -> bool {
+    f["vcodec"] == "none" && f["acodec"] != "none"
+}
+
+/// `vcodec:h264,acodec:aac`: H.264 first, then a format that already has AAC sound.
+fn pick_video<'a>(formats: &[&'a Value]) -> Option<&'a Value> {
+    formats.iter().copied().max_by_key(|f| (is_h264(f), is_aac(f)))
+}
+
+fn best_audio_for_video(e: &Value) -> Option<&Value> {
+    formats_of(e).filter(|f| is_audio_only(f)).max_by_key(|f| is_aac(f))
+}
+
+/// A video-only format needs the separate audio too. A missing acodec means it's unknown, usually
+/// because the sound is already inside.
+fn with_audio(video: &Value, audio: Option<&Value>, e: &Value) -> Option<u64> {
+    let duration = e["duration"].as_f64();
+    let extra = if video["acodec"] == "none" { audio.and_then(|a| format_size(a, duration)) } else { None };
+    Some(format_size(video, duration)? + extra.unwrap_or(0))
+}
+
+/// Size of one format as the site states it, else estimated from its bitrate (kbit/s).
+fn format_size(f: &Value, duration: Option<f64>) -> Option<u64> {
+    f["filesize"]
+        .as_f64()
+        .or_else(|| f["filesize_approx"].as_f64())
+        .or_else(|| Some(f["tbr"].as_f64()? * 125.0 * duration?))
+        .map(|bytes| bytes as u64)
+        .filter(|bytes| *bytes > 0)
+}
+
+/// For a video without a quality menu (`-f bv*+ba/b`).
+fn video_size(e: &Value) -> Option<u64> {
+    let videos: Vec<&Value> = formats_of(e).filter(|f| f["vcodec"] != "none").collect();
+    match pick_video(&videos) {
+        Some(video) => with_audio(video, best_audio_for_video(e), e),
+        None => format_size(e, e["duration"].as_f64()),
+    }
+}
+
+/// For the audio row (`-f ba/b`). This is what gets downloaded; the saved mp3 can differ.
+pub(crate) fn audio_size(e: &Value) -> Option<u64> {
+    let audio = formats_of(e).filter(|f| is_audio_only(f)).last().or_else(|| formats_of(e).last());
+    format_size(audio.unwrap_or(e), e["duration"].as_f64())
 }
 
 /// The file type shown for an item. Videos are always saved as mp4 (see media::make_playable).
@@ -418,6 +495,7 @@ async fn probe_html(url: &str) -> Result<ProbeResult> {
                 detail: None,
                 thumbnail: (kind == Kind::Image).then(|| page.to_string()),
                 qualities: Vec::new(),
+                size: resp.content_length().filter(|bytes| *bytes > 0),
                 source: Source::Direct { url: page.to_string(), referer: None },
             }],
         });
@@ -478,6 +556,7 @@ async fn probe_html(url: &str) -> Result<ProbeResult> {
             detail: None,
             thumbnail: (kind == Kind::Image).then(|| abs.clone()),
             qualities: Vec::new(),
+            size: None,
             source: Source::Direct { url: abs, referer: Some(page.to_string()) },
         })
         .collect();
@@ -578,6 +657,38 @@ mod tests {
         assert_eq!(clean_title("Video by timvatruc", &[]), "Video by timvatruc");
         assert_eq!(clean_title("Rick Astley - Never Gonna Give You Up", &["Rick Astley"]), "Rick Astley - Never Gonna Give You Up");
         assert_eq!(plain("𝗠𝗜𝗟𝗞𝗦𝗛𝗔𝗞𝗘 𝟮𝟬𝟮𝟲"), "milkshake 2026");
+    }
+
+    #[test]
+    fn sizes_match_the_formats_a_download_picks() {
+        let e: Value = serde_json::from_str(
+            r#"{"duration":10,"formats":[
+                {"format_id":"sb","vcodec":"none","acodec":"none","format_note":"storyboard","width":48,"height":27},
+                {"format_id":"a-aac","vcodec":"none","acodec":"mp4a.40.2","filesize":100},
+                {"format_id":"a-opus","vcodec":"none","acodec":"opus","filesize":150},
+                {"format_id":"combined-360","vcodec":"avc1.42","acodec":"mp4a.40.2","width":640,"height":360,"filesize_approx":700},
+                {"format_id":"h264-360","vcodec":"avc1.4d","acodec":"none","width":640,"height":360,"filesize":500},
+                {"format_id":"vp9-720","vcodec":"vp9","acodec":"none","width":1280,"height":720,"filesize":2000},
+                {"format_id":"h264-720","vcodec":"avc1.64","acodec":"none","width":1280,"height":720,"filesize":3000},
+                {"format_id":"hls-1080","vcodec":"avc1.64","acodec":"none","width":1920,"height":1080,"tbr":800},
+                {"format_id":"av1-2160","vcodec":"av01","acodec":"none","width":3840,"height":2160},
+                {"format_id":"vertical","vcodec":"vp9","acodec":"none","width":480,"height":854,"filesize":900}
+            ]}"#,
+        )
+        .unwrap();
+        let q = |height, compatible, size| Quality { height, compatible, size };
+        assert_eq!(
+            qualities(&e),
+            [
+                q(2160, false, None),       // the site gives no size or bitrate
+                q(1080, true, Some(1_000_100)), // 800 kbit/s for 10 s, plus the AAC audio
+                q(720, true, Some(3100)),   // H.264 even though VP9 is smaller
+                q(480, false, Some(1000)),  // the short side of a vertical video
+                q(360, true, Some(700)),    // already has sound: no separate audio
+            ]
+        );
+        assert_eq!(audio_size(&e), Some(150), "ba: the best audio, not the AAC");
+        assert_eq!(video_size(&serde_json::json!({"duration":2,"tbr":8})), Some(2000), "no format list");
     }
 
     #[test]

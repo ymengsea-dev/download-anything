@@ -13,6 +13,8 @@ export interface Quality {
   height: number;
   /** Offered as H.264, so no conversion is needed. */
   compatible: boolean;
+  /** Estimated bytes to download, when the site gives enough to tell. */
+  size: number | null;
 }
 
 export interface MediaItem {
@@ -25,6 +27,8 @@ export interface MediaItem {
   thumbnail: string | null;
   /** Video resolutions on offer, best first. */
   qualities: Quality[];
+  /** Bytes to download when there's no quality menu; null when unknown. */
+  size: number | null;
   source: Source;
 }
 
