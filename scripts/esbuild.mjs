@@ -9,15 +9,15 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const outdir = join(root, "dist");
 const serve = process.argv.includes("--serve");
-const port = 1420; // must match build.devUrl in src-tauri/tauri.conf.json
+const port = 1420; // must match build.devUrl in backend/tauri.conf.json
 
 rmSync(outdir, { recursive: true, force: true });
 mkdirSync(outdir, { recursive: true });
-copyFileSync(join(root, "index.html"), join(outdir, "index.html"));
+copyFileSync(join(root, "frontend/index.html"), join(outdir, "index.html"));
 
 /** @type {esbuild.BuildOptions} */
 const options = {
-  entryPoints: { main: join(root, "src/main.tsx") },
+  entryPoints: { main: join(root, "frontend/main.tsx") },
   outdir,
   bundle: true,
   format: "esm",

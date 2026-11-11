@@ -2,8 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::media::{self, VideoEncoder};
-use crate::proc::{self, Cancel, Result};
+use crate::engines::proc::{self, Cancel, Result};
+use crate::output::media::{self, VideoEncoder};
 
 const FALLBACK_SECONDS_PER_IMAGE: f64 = 3.0;
 const MAX_SIDE: u32 = 1920;

@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const { version, productName } = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"));
+const { version, productName } = JSON.parse(readFileSync(join(root, "backend/tauri.conf.json"), "utf8"));
 const designDir = join(root, "design/dmg");
 const background = join(designDir, "background.tiff");
 const dsStore = join(designDir, "DS_Store");
@@ -62,7 +62,7 @@ function styleAll(files) {
 
 // `tauri build` writes to target/release/bundle, or target/<triple>/release/bundle with --target.
 function builtDmgs() {
-  const target = join(root, "src-tauri/target");
+  const target = join(root, "backend/target");
   return ["release/bundle/dmg"]
     .concat(readdirSync(target).map((t) => join(t, "release/bundle/dmg")))
     .map((d) => join(target, d))

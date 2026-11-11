@@ -14,9 +14,9 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::Value;
 
-use crate::binaries::Engine;
-use crate::probe::{clean_title, ext_of, Kind, MediaItem, ProbeResult, Source};
-use crate::proc::{self, Cancel, Output, Result};
+use crate::engines::binaries::Engine;
+use crate::engines::proc::{self, Cancel, Output, Result};
+use crate::sources::probe::{clean_title, ext_of, Kind, MediaItem, ProbeResult, Source};
 
 static INSTAGRAM_POST: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"instagram\.com/(?:[^/?#]+/)?(?:p|reels?|tv)/([A-Za-z0-9_-]+)").unwrap());
@@ -211,10 +211,10 @@ pub async fn tiktok(engine: &Engine, url: &str, cancel: &Cancel, timeout: std::t
             kind: Kind::Audio,
             title: music["title"].as_str().filter(|t| !t.is_empty()).map(String::from).unwrap_or_else(|| title.clone()),
             format: Some("mp3".into()),
-            detail: duration.map(crate::probe::fmt_duration),
+            detail: duration.map(crate::sources::probe::fmt_duration),
             thumbnail: music["coverLarge"].as_str().map(String::from),
             qualities: Vec::new(),
-            size: crate::probe::audio_size(&info),
+            size: crate::sources::probe::audio_size(&info),
             source: Source::YtDlp { url: video_url, playlist_index: None, audio_only: true, max_height: None },
         });
     }
@@ -245,7 +245,7 @@ pub fn facebook(url: &str, pages: &[String]) -> Option<ProbeResult> {
     }
     let title = pages
         .iter()
-        .find_map(|page| OG_TITLE.captures(page).map(|c| clean_title(&crate::probe::decode_entities(&c[1]), &[])))
+        .find_map(|page| OG_TITLE.captures(page).map(|c| clean_title(&crate::sources::probe::decode_entities(&c[1]), &[])))
         .filter(|t| !t.is_empty())
         .unwrap_or_else(|| "Facebook photo".into());
     let count = photos.len();

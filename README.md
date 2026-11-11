@@ -1,4 +1,4 @@
-<p align="center"><img src="design/app-icon.png" width="160" alt="Download Anything logo: a photo, a play button and a music note dropping into an open cardboard box"></p>
+<p align="center"><img src="design/icon/app-icon.png" width="160" alt="Download Anything logo: a photo, a play button and a music note dropping into an open cardboard box"></p>
 
 # Download Anything
 
@@ -34,26 +34,25 @@ pnpm install
 pnpm engines        # fetch + verify the bundled engines (also runs automatically before dev/build)
 pnpm tauri dev      # run the app
 pnpm tauri build    # build an installer for this OS
-pnpm release:local  # build, then copy the installers into builds/v<version>/<os>-<arch>/
+pnpm release:local  # build, then copy the installer into builds/v<version>/
 ```
 
-`tauri build` writes its output to `src-tauri/target/release/bundle/`. `pnpm release:local` (or
-`pnpm collect-build` after a build) copies the installers for the current version from there into
-`builds/`, together with a `SHA256SUMS` file:
+`tauri build` writes its output to `backend/target/release/bundle/`. `pnpm release:local` (or
+`pnpm collect-build` after a build) copies just the installer for the current version (the `.dmg` on macOS)
+into a folder named after the version:
 
 ```text
 builds/
   v0.1.0/
-    macos-aarch64/
-      Download Anything.app
-      Download Anything_0.1.0_aarch64.dmg
-      SHA256SUMS
+    Download Anything_0.1.0_aarch64.dmg
+  v0.1.1/
+    Download Anything_0.1.1_aarch64.dmg
 ```
 
 `builds/` is in `.gitignore` and is never pushed. To make a new version, bump `version` in
-`src-tauri/tauri.conf.json`. Rebuilding the same version replaces that version's folder.
+`backend/tauri.conf.json` (and `package.json`). Rebuilding the same version replaces its installer.
 
-Tests (from `src-tauri/`):
+Tests (from `backend/`):
 
 ```sh
 cargo test                     # unit tests
@@ -63,22 +62,26 @@ cargo test -- --include-ignored  # plus end-to-end tests that hit the network an
 ## Layout
 
 ```text
-design/app-icon.svg  hand-drawn icon source (app-icon.png is its 1024 px render)
+design/icon/         app-icon.svg (hand-drawn icon source) and app-icon.png (its 1024 px render)
 design/dmg/          macOS install window: background.svg, its render, and the saved Finder layout
-index.html           page shell; loads dist/main.js + main.css
 scripts/
-  esbuild.mjs        bundles src/ into dist/ (`pnpm dev` = dev server on :1420 with live reload)
-  collect-build.mjs  copies installers into builds/v<version>/<os>-<arch>/
+  esbuild.mjs        bundles frontend/ into dist/ (`pnpm dev` = dev server on :1420 with live reload)
+  collect-build.mjs  copies the installer into builds/v<version>/
   dmg.mjs            adds the install window to the built .dmg
-src/                 React UI (App.tsx) + typed command wrappers (api.ts)
-src-tauri/src/
-  binaries.rs        locate the bundled yt-dlp / ffmpeg; verified "Update yt-dlp"
-  probe.rs           URL -> list of media (direct file -> yt-dlp -> photos.rs -> HTML scan)
-  photos.rs          Instagram photo posts from yt-dlp's own data
-  download.rs        download one item, with progress
-  render.rs          images + audio -> mp4
-  proc.rs            spawn tools with line streaming + cancel
-  lib.rs             Tauri commands and job tracking
+frontend/            React UI; index.html is the page shell (loads main.js + main.css)
+  app/               window shell (App.tsx) and engine start-up
+  features/download/ main screen: link box, results, download/render jobs
+  features/settings/ settings screen: save folder, engines, "Update yt-dlp"
+  shared/            typed command wrappers (api.ts), icons, storage
+  styles/base.css    colour tokens and styles both screens share
+backend/src/         Rust
+  lib.rs             module list + app start-up
+  commands.rs        Tauri commands
+  jobs.rs            job tracking, cancel, progress events
+  engines/           binaries.rs (bundled yt-dlp / ffmpeg, verified "Update yt-dlp"), proc.rs (run tools + cancel)
+  sources/           probe.rs (URL -> media: direct file -> yt-dlp -> photos.rs -> HTML scan), photos.rs
+  output/            download.rs (one item, with progress), render.rs (images + audio -> mp4), media.rs
+  http.rs            shared HTTP client + streamed downloads
 ```
 
 ## Releases
@@ -125,7 +128,7 @@ this repo. Their licenses and source links ship with the app in `licenses/`.
 | [Rust](https://github.com/rust-lang/rust) | MIT OR Apache-2.0 |
 
 These Rust crates bring in a few hundred smaller ones, almost all MIT or Apache-2.0. To list them with their licenses,
-run `cargo metadata --format-version 1` in `src-tauri/`.
+run `cargo metadata --format-version 1` in `backend/`.
 
 ## License
 

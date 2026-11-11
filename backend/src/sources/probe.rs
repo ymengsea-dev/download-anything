@@ -11,9 +11,9 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::binaries::Engine;
+use crate::engines::binaries::Engine;
+use crate::engines::proc::{self, cancelled, err, Cancel, Result};
 use crate::http::client;
-use crate::proc::{self, cancelled, err, Cancel, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -99,14 +99,14 @@ pub async fn probe(engine: &Engine, url: &str, cancel: &Cancel) -> Result<ProbeR
     }
 
     // TikTok photo posts: yt-dlp rejects their /photo/ links outright, so go straight there.
-    if let Ok(Some(found)) = crate::photos::tiktok(engine, url, cancel, ENGINE_TIMEOUT).await {
+    if let Ok(Some(found)) = crate::sources::photos::tiktok(engine, url, cancel, ENGINE_TIMEOUT).await {
         return Ok(found);
     }
 
     // Posts that may turn out to be photos keep yt-dlp's pages from this one run, so reading
     // the photos doesn't cost a second run (each one takes seconds just to start).
-    let (run, pages) = if crate::photos::may_be_photo_post(url) {
-        match crate::photos::saved_pages(engine, url, &YT_DLP_PROBE_ARGS, cancel, ENGINE_TIMEOUT).await {
+    let (run, pages) = if crate::sources::photos::may_be_photo_post(url) {
+        match crate::sources::photos::saved_pages(engine, url, &YT_DLP_PROBE_ARGS, cancel, ENGINE_TIMEOUT).await {
             Ok((out, pages)) => (Ok(out), pages),
             Err(e) => (Err(e), Vec::new()),
         }
@@ -125,7 +125,7 @@ pub async fn probe(engine: &Engine, url: &str, cancel: &Cancel) -> Result<ProbeR
 
     // Photo posts (Instagram, Facebook): yt-dlp reads them (without a login, for public posts)
     // but only downloads video. Take the photos from the data it fetched.
-    if let Some(found) = crate::photos::instagram(url, &pages).or_else(|| crate::photos::facebook(url, &pages)) {
+    if let Some(found) = crate::sources::photos::instagram(url, &pages).or_else(|| crate::sources::photos::facebook(url, &pages)) {
         return Ok(found);
     }
 
@@ -489,7 +489,7 @@ async fn probe_html(url: &str) -> Result<ProbeResult> {
             items: vec![MediaItem {
                 kind,
                 title: name,
-                format: crate::download::ext_for_mime(&content_type)
+                format: crate::output::download::ext_for_mime(&content_type)
                     .map(String::from)
                     .or_else(|| format_for(kind, &ext_of(page.as_str()))),
                 detail: None,

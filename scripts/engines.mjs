@@ -7,11 +7,11 @@
 // macOS: FFmpeg is compiled from official source by scripts/build-ffmpeg-macos.sh (LGPL, shareable),
 // because the ready-made Mac builds are "nonfree". It's rebuilt only when that script changes.
 //
-// macOS: yt-dlp is the official folder build, as a zip the app unpacks once (see binaries.rs), because
+// macOS: yt-dlp is the official folder build, as a zip the app unpacks once (see backend/src/engines/binaries.rs), because
 // the single-file build takes 7 seconds to start on every run. tauri.macos.conf.json bundles it.
 //
-// Output: src-tauri/binaries/<name>-<target-triple>[.exe] (Tauri `externalBin`) and
-// src-tauri/binaries/licenses/ (bundled as resources). Already-verified files are reused.
+// Output: backend/binaries/<name>-<target-triple>[.exe] (Tauri `externalBin`) and
+// backend/binaries/licenses/ (bundled as resources). Already-verified files are reused.
 //
 // To upgrade an engine: change its version/URLs below and paste the new SHA-256 digests from the
 // release page (GitHub shows them per asset, or `gh api repos/<owner>/<repo>/releases/tags/<tag>`).
@@ -55,7 +55,7 @@ const TARGETS = {
 };
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const outDir = join(root, "src-tauri/binaries");
+const outDir = join(root, "backend/binaries");
 const args = process.argv.slice(2);
 const target = args.includes("--target") ? args[args.indexOf("--target") + 1] : hostTriple();
 const spec = TARGETS[target];

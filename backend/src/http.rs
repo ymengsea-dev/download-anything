@@ -6,7 +6,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
 
-use crate::proc::{cancelled, err, Cancel, Result};
+use crate::engines::proc::{cancelled, err, Cancel, Result};
 
 static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()

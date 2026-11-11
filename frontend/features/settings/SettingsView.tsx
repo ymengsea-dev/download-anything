@@ -1,17 +1,11 @@
 import { useEffect, useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import * as api from "./api";
-import type { Tool, ToolStatus } from "./api";
+import * as api from "../../shared/api";
+import type { ToolStatus } from "../../shared/api";
+import { FolderIcon } from "../../shared/icons";
+import { EngineRow, type Update } from "./EngineRow";
+import "./settings.css";
 
-const TOOLS: Record<Tool, { name: string; purpose: string }> = {
-  "yt-dlp": { name: "yt-dlp", purpose: "Videos, audio and photos from 1,800+ sites" },
-  ffmpeg: { name: "FFmpeg", purpose: "Joins, converts and renders video" },
-};
-
-/** "Update yt-dlp": idle → downloading (verified before use) → a result line. */
-type Update = { step: "running"; percent: number } | { step: "done"; text: string } | { step: "error"; error: string };
-
-const message = (e: unknown) => (typeof e === "string" ? e : String(e));
 const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 
 interface Props {
@@ -20,12 +14,12 @@ interface Props {
   onClose: () => void;
 }
 
-export default function Settings({ outDir, onChooseFolder, onClose }: Props) {
+export default function SettingsView({ outDir, onChooseFolder, onClose }: Props) {
   const [tools, setTools] = useState<ToolStatus[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [update, setUpdate] = useState<Update | null>(null);
 
-  const loadTools = () => api.engineStatus().then(setTools).catch((e) => setLoadError(message(e)));
+  const loadTools = () => api.engineStatus().then(setTools).catch((e) => setLoadError(api.message(e)));
 
   useEffect(() => {
     loadTools();
@@ -45,7 +39,7 @@ export default function Settings({ outDir, onChooseFolder, onClose }: Props) {
       await loadTools();
       setUpdate({ step: "done", text: outcome.result === "updated" ? "Updated and verified" : "Already up to date" });
     } catch (e) {
-      setUpdate({ step: "error", error: message(e) });
+      setUpdate({ step: "error", error: api.message(e) });
     }
   };
 
@@ -94,56 +88,5 @@ export default function Settings({ outDir, onChooseFolder, onClose }: Props) {
         </p>
       </section>
     </div>
-  );
-}
-
-interface EngineRowProps {
-  status: ToolStatus;
-  update?: Update | null;
-  onUpdate?: () => void;
-}
-
-function EngineRow({ status, update, onUpdate }: EngineRowProps) {
-  const info = TOOLS[status.tool];
-
-  let line: React.ReactNode;
-  if (update?.step === "running") {
-    line = `Downloading${update.percent >= 0 ? ` ${Math.round(update.percent)}%` : ""}…`;
-  } else if (update?.step === "error") {
-    line = <span className="error" title={update.error}>{update.error}</span>;
-  } else {
-    line = (
-      <>
-        <span className="ok">{status.updated ? "Updated" : "Built in"}</span>
-        {status.version && ` · ${status.version}`}
-        {update?.step === "done" && ` · ${update.text}`}
-      </>
-    );
-  }
-
-  return (
-    <div className="row engine" title={status.path}>
-      <div className="info">
-        <div className="title">{info.name}</div>
-        <div className="detail">{info.purpose}</div>
-        <div className="detail engine-state">{line}</div>
-      </div>
-      {onUpdate &&
-        (update?.step === "running" ? (
-          <span className="spinner" />
-        ) : (
-          <button className="secondary" onClick={onUpdate}>
-            Update
-          </button>
-        ))}
-    </div>
-  );
-}
-
-export function FolderIcon() {
-  return (
-    <svg className="folder-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.6l2 2h7.4A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5z" />
-    </svg>
   );
 }

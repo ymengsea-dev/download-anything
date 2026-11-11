@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::proc::{self, err, Cancel, Result};
+use crate::engines::proc::{self, err, Cancel, Result};
 
 static DURATION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)").unwrap());
@@ -168,7 +168,7 @@ pub async fn make_playable(
     let final_path = if is_mp4 {
         path.to_path_buf()
     } else {
-        crate::download::reserve_unique(&path.with_extension("mp4"))?.0
+        crate::output::download::reserve_unique(&path.with_extension("mp4"))?.0
     };
     std::fs::remove_file(path).map_err(err)?;
     std::fs::rename(&temp, &final_path).map_err(err)?;

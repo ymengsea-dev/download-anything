@@ -1,6 +1,9 @@
-// Typed wrappers around the Rust commands in src-tauri/src/lib.rs.
+// Typed wrappers around the Rust commands in backend/src/commands.rs.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+
+/** Rust errors arrive as plain strings; anything else is stringified. */
+export const message = (e: unknown) => (typeof e === "string" ? e : String(e));
 
 export type Kind = "video" | "image" | "audio";
 

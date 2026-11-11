@@ -14,8 +14,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::engines::proc::{self, err, Result};
 use crate::http;
-use crate::proc::{self, err, Result};
 
 const YT_DLP_LATEST: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download";
 const MAC_ZIP: &str = "yt-dlp-macos.zip";

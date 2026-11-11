@@ -3,11 +3,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use crate::binaries::Engine;
+use crate::engines::binaries::Engine;
+use crate::engines::proc::{self, err, Cancel, Result};
 use crate::http;
-use crate::media;
-use crate::probe::{ext_of, file_name_of, Kind, MediaItem, Source};
-use crate::proc::{self, err, Cancel, Result};
+use crate::output::media;
+use crate::sources::probe::{ext_of, file_name_of, Kind, MediaItem, Source};
 
 const PROGRESS_PREFIX: &str = "[da]";
 
